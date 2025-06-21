@@ -57,6 +57,8 @@ transform = transforms.Compose([
 # Workaround dla OMP: Error #15 (z predict_image.py)
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
+
+
 if not torch.cuda.is_available():
     print("BŁĄD: CUDA nie jest dostępne. Ten skrypt wymaga akceleracji GPU do działania modelu predykcyjnego.")
     print("Upewnij się, że masz poprawnie zainstalowane PyTorch z obsługą CUDA i kompatybilny sterownik GPU.")
@@ -67,26 +69,26 @@ print(f"Pomyślnie skonfigurowano użycie urządzenia: {device}")
 
 
 # 🔧 Konfiguracja Selenium
-TINDER_URL = "https://am1.badoo.com/encounters" # Adres URL Badoo
+TINDER_URL = "https://tinder.com/app/recs" # Adres URL Tindera
 SWIPES_LIMIT = 100
 MIN_DELAY = 1.5
 MAX_DELAY = 3.5
 
 # Selektory (na podstawie wcześniejszych ustaleń i dostarczonego HTML Badoo)
 # Selektor obszaru przycisków Like/Nope (używany do czekania na gotowość strony)
-TOOLBAR_SELECTOR = "div.profile-card-full__actions"
+TOOLBAR_SELECTOR = "div.recsToolbar"
 
 
 
 # Selektor dla elementu, na którym będziemy emulować swipe (TWÓJ POPRAWNY SELEKTOR!)
-SWIPE_ELEMENT_SELECTOR = "div.user-section-photo" # <<< TUTAJ JEST TWÓJ SELEKTOR!
+SWIPE_ELEMENT_SELECTOR = "div.StretchedBox" # <<< TUTAJ JEST TWÓJ SELEKTOR!
 SWIPE_OFFSET_PIXELS = 300 # <<< Określ, o ile pikseli w prawo przeciągnąć (doświadczalnie)
 SWIPE_LEFT_OFFSET_PIXELS = -300 # <<< Określ, o ile pikseli w lewo przeciągnąć (doświadczalnie)
 
 
 # Selektor dla elementu(ów) ZDJĘCIA PROFILOWEGO na Badoo
 # MUSISZ ZIDENTYFIKOWAĆ I WSTAWIC POPRAWNY SELEKTOR DLA ELEMENTU IMG LUB INNEGO ZAWIERAJACEGO ZDJECIE
-IMAGE_ELEMENT_SELECTOR = "img[data-qa='multimedia-image']" # <<< Używamy selektora opartego na data-qa
+IMAGE_ELEMENT_SELECTOR = "div.StretchedBox" # <<< Używamy selektora opartego na data-qa
 
 
 # 🔧 Opcje przeglądarki Firefox
@@ -112,6 +114,8 @@ service = Service(GeckoDriverManager().install())
 
 # Uruchom przeglądarkę Firefox
 driver = webdriver.Firefox(service=service, options=options)
+
+actions = ActionChains(driver)
 
 # --- ZAŁADUJ SWÓJ MODEL TUTAJ ---
 print("⏳ Ładowanie modelu predykcyjnego...")
@@ -225,10 +229,10 @@ try:
 
                 for img_element in image_elements:
                     # Upewnij się, że element ma atrybut 'src' i że URL nie jest pusty
-                    src = img_element.get_attribute("src")
+                    src = img_element.get_attribute("style")
                     # Badoo może używać leniwego ładowania (lazy loading) i URL może być w innym atrybucie, np. data-src
                     if not src or not src.startswith("http"):
-                         src = img_element.get_attribute("data-src")
+                         src = img_element.get_attribute("style")
                          # Sprawdź też inne atrybuty, np. style='background-image: url(...)'
                          if not src or not src.startswith("http"):
                              style = img_element.get_attribute("style")
@@ -338,26 +342,34 @@ try:
                 # ---------------------------------------
 
                 # --- WYKONAJ AKCJĘ SWIPE NA PODSTAWIE DECYZJI ---
-                # Upewnij się, że element do swipe'a nadal istnieje przed próbą wykonania gestu
+                # Upewnij się, że element do wysyłania klawiszy jest aktywny i widoczny
                 try:
-                    swipe_element = driver.find_element(By.CSS_SELECTOR, SWIPE_ELEMENT_SELECTOR)
+                    # Ponownie znajdujemy element, aby upewnić się, że jest aktualny po ewentualnym załadowaniu nowego profilu
+                    target_element = WebDriverWait(driver, 5).until(
+                         EC.visibility_of_element_located((By.CSS_SELECTOR, SWIPE_ELEMENT_SELECTOR))
+                    )
+                    # Alternatywnie można spróbować wysłać klawisze do elementu body, jeśli wysyłanie do swipe_element nie działa
+                    # target_element = driver.find_element(By.TAG_NAME, 'body')
+
+                except TimeoutException:
+                    print(f"⚠️ TimeoutException: Element docelowy dla klawiszy ({SWIPE_ELEMENT_SELECTOR}) nie był widoczny. Pomiń profil.")
+                    swiped_count += 1 # Zwiększ licznik w przypadku błędu
+                    continue
                 except NoSuchElementException:
-                     print(f"⚠️ NoSuchElementException: Element do swipe'a ({SWIPE_ELEMENT_SELECTOR}) zniknął po załadowaniu zdjęć. Pomiń profil.")
-                     swiped_count += 1 # Zwiększ licznik, jeśli element zniknął
+                     print(f"⚠️ NoSuchElementException: Element docelowy dla klawiszy ({SWIPE_ELEMENT_SELECTOR}) nie znaleziono. Pomiń profil.")
+                     swiped_count += 1 # Zwiększ licznik w przypadku błędu
                      continue
 
 
-                actions = ActionChains(driver)
-
                 if should_swipe_right:
-                    print("➡️ Wykonuję Swipe Right...")
-                    # Symulacja przeciągnięcia elementu w prawo
-                    actions.drag_and_drop_by_offset(swipe_element, SWIPE_OFFSET_PIXELS, 0).perform()
+                    print("➡️ Wykonuję Swipe Right (klawisz strzałki w prawo)...")
+                    # Wyślij klawisz strzałki w prawo do elementu
+                    actions.send_keys(Keys.ARROW_RIGHT).perform()
                     print("✅ Swipe Right wykonany.") # Dodano log potwierdzający
                 else:
-                    print("⬅️ Wykonuję Swipe Left...")
-                    # Symulacja przeciągnięcia elementu w lewo
-                    actions.drag_and_drop_by_offset(swipe_element, SWIPE_LEFT_OFFSET_PIXELS, 0).perform()
+                    print("⬅️ Wykonuję Swipe Left (klawisz strzałki w lewo)...")
+                    # Wyślij klawisz strzałki w lewo do elementu
+                    actions.send_keys(Keys.ARROW_LEFT).perform()
                     print("✅ Swipe Left wykonany.") # Dodano log potwierdzający
 
                 # ------------------------------------------------
